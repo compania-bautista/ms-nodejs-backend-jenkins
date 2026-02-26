@@ -153,6 +153,133 @@ pipeline {
                 '''
             }
         }
+        stage('Aprobación QA') {
+            steps {
+                input message: "¿Aprobar despliegue en entorno QA?"
+            }
+        }
 
+        stage('[CD-QA] Set Image Tag in k8s.yml') {
+            steps {
+                script {
+                    // Declarar más variables de entorno
+                    env.API_PROVIDER_URL = "https://qa.api.com"
+                    env.ENV = "qa"
+                }
+
+                sh '''
+                  echo ">>> Renderizando k8s.yml..."
+
+                  envsubst < k8s.yml > k8s-qa.yml
+                  cat k8s-qa.yml
+
+                '''
+            }
+        }
+
+        stage('[CD-QA] Deploy to AKS') {
+          steps {
+            sh '''
+                az aks command invoke \
+                  --resource-group $RESOURCE_GROUP \
+                  --name $AKS_NAME \
+                  --command "kubectl apply -f k8s-qa.yml" \
+                  --file k8s-qa.yml
+
+            '''
+          }
+        }
+        stage('[CD-QA] Imprimir IP del servicio') {
+            steps {
+                sh '''
+                  echo ">>> Intentando obtener IP del LoadBalancer para QA..."
+
+                  SERVICE_NAME="my-nodejs-service-${APELLIDO}-${ENV}"  # Cambia esto por el nombre real de tu Service
+                  LB_IP=""
+                  MAX_RETRIES=5
+                  RETRY_COUNT=0
+
+                  while [ -z "$LB_IP" ] && [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                    LB_IP=$(kubectl get svc $SERVICE_NAME -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+                    if [ -z "$LB_IP" ]; then
+                      RETRY_COUNT=$((RETRY_COUNT+1))
+                      echo "Intento $RETRY_COUNT/$MAX_RETRIES: IP aún no asignada, esperando 5s..."
+                      sleep 5
+                    fi
+                  done
+
+                  if [ -z "$LB_IP" ]; then
+                    echo ">>> No se pudo obtener la IP del LoadBalancer después de $MAX_RETRIES intentos."
+                    exit 1
+                  else
+                    echo ">>> IP del LoadBalancer para QA asignada: $LB_IP"
+                  fi
+                '''
+            }
+        }
+        stage('Aprobación PRD') {
+            steps {
+                input message: "¿Aprobar despliegue en entorno PRD?"
+            }
+        }
+
+        stage('[CD-PRD] Set Image Tag in k8s.yml') {
+            steps {
+                script {
+                    // Declarar más variables de entorno
+                    env.API_PROVIDER_URL = "https://prd.api.com"
+                    env.ENV = "prd"
+                }
+
+                sh '''
+                  echo ">>> Renderizando k8s.yml..."
+
+                  envsubst < k8s.yml > k8s-prd.yml
+                  cat k8s-prd.yml
+
+                '''
+            }
+        }
+
+        stage('[CD-PRD] Deploy a AKS') {
+          steps {
+            sh '''
+                az aks command invoke \
+                  --resource-group $RESOURCE_GROUP \
+                  --name $AKS_NAME \
+                  --command "kubectl apply -f k8s-prd.yml" \
+                  --file k8s-prd.yml
+
+            '''
+          }
+        }
+        stage('[CD-PRD] Imprimir IP del servicio') {
+            steps {
+                sh '''
+                  echo ">>> Intentando obtener IP del LoadBalancer para PRD..."
+
+                  SERVICE_NAME="my-nodejs-service-${APELLIDO}-${ENV}"  # Cambia esto por el nombre real de tu Service
+                  LB_IP=""
+                  MAX_RETRIES=5
+                  RETRY_COUNT=0
+
+                  while [ -z "$LB_IP" ] && [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                    LB_IP=$(kubectl get svc $SERVICE_NAME -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+                    if [ -z "$LB_IP" ]; then
+                      RETRY_COUNT=$((RETRY_COUNT+1))
+                      echo "Intento $RETRY_COUNT/$MAX_RETRIES: IP aún no asignada, esperando 5s..."
+                      sleep 5
+                    fi
+                  done
+
+                  if [ -z "$LB_IP" ]; then
+                    echo ">>> No se pudo obtener la IP del LoadBalancer después de $MAX_RETRIES intentos."
+                    exit 1
+                  else
+                    echo ">>> IP del LoadBalancer para PRD asignada: $LB_IP"
+                  fi
+                '''
+            }
+        }
     }
 }
